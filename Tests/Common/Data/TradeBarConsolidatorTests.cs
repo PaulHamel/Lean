@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  * 
@@ -448,6 +448,10 @@ namespace QuantConnect.Tests.Common.Data
         [Test]
         public void AggregatesPeriodInPeriodModeWithDailyDataAndRoundedTime()
         {
+            // This test is an interesting case: the EndTime of the bar we give to the consolidator is after the rounded start time
+            // + period of the consolidator bar. Meaning the consolidated bar EndTime could potentially be *Before* the EndTime of the bar we gave it
+            // and to avoid look ahead bias we use the given bars start time + period.
+
             TradeBar consolidated = null;
             var period = TimeSpan.FromDays(1);
             var consolidator = new TradeBarConsolidator(period);
@@ -463,19 +467,19 @@ namespace QuantConnect.Tests.Common.Data
             consolidator.Update(new TradeBar { Time = reference.AddDays(1).AddMinutes(1), Period = period });
             Assert.IsNotNull(consolidated);
             Assert.AreEqual(period, consolidated.Period);
-            Assert.AreEqual(reference, consolidated.Time);
+            Assert.AreEqual(reference.AddSeconds(45), consolidated.Time);
             consolidated = null;
 
             consolidator.Update(new TradeBar { Time = reference.AddDays(2).AddHours(1), Period = period });
             Assert.IsNotNull(consolidated);
             Assert.AreEqual(period, consolidated.Period);
-            Assert.AreEqual(reference.AddDays(1), consolidated.Time);
+            Assert.AreEqual(reference.AddDays(1).AddMinutes(1), consolidated.Time);
             consolidated = null;
 
-            consolidator.Update(new TradeBar { Time = reference.AddDays(3).AddMinutes(1).AddSeconds(1), Period = period });
+            consolidator.Update(new TradeBar { Time = reference.AddDays(3).AddHours(1), Period = period });
             Assert.IsNotNull(consolidated);
             Assert.AreEqual(period, consolidated.Period);
-            Assert.AreEqual(reference.AddDays(2), consolidated.Time);
+            Assert.AreEqual(reference.AddDays(2).AddHours(1), consolidated.Time);
         }
 
         [Test]
@@ -490,7 +494,7 @@ namespace QuantConnect.Tests.Common.Data
             };
 
             var reference = new DateTime(2015, 04, 13);
-            consolidator.Update(new TradeBar { Time = reference.AddSeconds(45), Period = period });
+            consolidator.Update(new TradeBar { Time = reference, Period = period });
             Assert.IsNull(consolidated);
 
             consolidator.Scan(reference + period);

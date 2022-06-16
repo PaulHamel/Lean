@@ -175,7 +175,7 @@ namespace QuantConnect.Data.Consolidators
             if (_period.HasValue)
             {
                 // we're in time span mode and initialized
-                if (_workingBar != null && data.Time - _workingBar.Time >= _period.Value && GetRoundedBarTime(data.Time) > _lastEmit)
+                if (_workingBar != null && data.Time - _workingBar.Time >= _period.Value && GetRoundedBarTime(data) > _lastEmit)
                 {
                     fireDataConsolidated = true;
                 }
@@ -275,7 +275,7 @@ namespace QuantConnect.Data.Consolidators
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         protected DateTime GetRoundedBarTime(DateTime time)
         {
-            var barTime = _periodSpecification.GetRoundedBarTime(time);
+            var startTime = _periodSpecification.GetRoundedBarTime(time);
 
             // In the case of a new bar, define the period defined at opening time
             if (_workingBar == null)
@@ -283,7 +283,29 @@ namespace QuantConnect.Data.Consolidators
                 _period = _periodSpecification.Period;
             }
 
-            return barTime;
+            return startTime;
+        }
+
+        /// <summary>
+        /// Gets a rounded-down bar time. Called by AggregateBar in derived classes.
+        /// </summary>
+        /// <param name="data">The bar to be rounded down</param>
+        /// <returns>The rounded bar time</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        protected DateTime GetRoundedBarTime(IBaseData data)
+        {
+            var startTime = GetRoundedBarTime(data.Time);
+
+            if (IsTimeBased && Period.HasValue && data.EndTime > startTime + Period)
+            {
+                // whops! potential look ahead bias. This could be because data.Period == Period (like aggregating period of 1 day from daily bars) and the data.EndTime is shifted regarding the rouding period
+                // see test 'AggregatesTimeSpanQuoteBarProperlyDaily' & GH issue #3062: oanda bars end at 19hrs but here we try consolidating rounded bars at midnight exchange timezone.
+                // Or it could also happen if the consolidator is given bars the a bigger period than the one being consolidated. See 'AggregatesPeriodInPeriodModeWithDailyDataAndRoundedTime'
+                // so in this case we don't roundown but just use the start time of the bar we were giving instead.
+                startTime = data.Time;
+            }
+
+            return startTime;
         }
 
         /// <summary>
