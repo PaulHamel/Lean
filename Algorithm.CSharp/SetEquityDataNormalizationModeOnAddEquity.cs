@@ -1,4 +1,4 @@
-/* 
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -14,57 +14,64 @@
 */
 
 using System;
-using System.Collections.Generic;
 using System.Linq;
+using System.Collections.Generic;
 using QuantConnect.Data;
 using QuantConnect.Interfaces;
-using QuantConnect.Securities;
+using QuantConnect.Securities.Equity;
 
 namespace QuantConnect.Algorithm.CSharp
 {
     /// <summary>
-    /// Regression algorithm to test if expired futures contract chains are making their
-    /// way into the timeslices being delivered to OnData()
+    /// This regression algorithm has examples of how to add an equity indicating the <see cref="DataNormalizationMode"/>
+    /// directly with the <see cref="QCAlgorithm.AddEquity"/> method instead of using the <see cref="Equity.SetDataNormalizationMode"/> method.
     /// </summary>
-    public class FuturesExpiredContractRegression : QCAlgorithm, IRegressionAlgorithmDefinition
+    public class SetEquityDataNormalizationModeOnAddEquity : QCAlgorithm, IRegressionAlgorithmDefinition
     {
-        private bool _receivedData;
+        private readonly DataNormalizationMode _spyNormalizationMode = DataNormalizationMode.Raw;
+        private readonly DataNormalizationMode _ibmNormalizationMode = DataNormalizationMode.Adjusted;
+        private readonly DataNormalizationMode _aigNormalizationMode = DataNormalizationMode.TotalReturn;
+        private Dictionary<Equity, Tuple<decimal, decimal>> _priceRanges = new Dictionary<Equity, Tuple<decimal, decimal>>();
 
-        /// <summary>
-        /// Initializes the algorithm state.
-        /// </summary>
         public override void Initialize()
         {
-            SetStartDate(2013, 10, 1);
-            SetEndDate(2013, 12, 23);
-            SetCash(1000000);
+            SetStartDate(2013, 10, 7);
+            SetEndDate(2013, 10, 7);
 
-            // Subscribe to futures ES
-            var future = AddFuture(Futures.Indices.SP500EMini, Resolution.Minute, Market.CME, false);
-            future.SetFilter(TimeSpan.FromDays(0), TimeSpan.FromDays(90));
+            var spyEquity = AddEquity("SPY", Resolution.Minute, dataNormalizationMode: _spyNormalizationMode);
+            CheckEquityDataNormalizationMode(spyEquity, _spyNormalizationMode);
+            _priceRanges.Add(spyEquity, new Tuple<decimal, decimal>(167.28m, 168.37m));
+
+            var ibmEquity = AddEquity("IBM", Resolution.Minute, dataNormalizationMode: _ibmNormalizationMode);
+            CheckEquityDataNormalizationMode(ibmEquity, _ibmNormalizationMode);
+            _priceRanges.Add(ibmEquity, new Tuple<decimal, decimal>(135.864131052m, 136.819606508m));
+
+            var aigEquity = AddEquity("AIG", Resolution.Minute, dataNormalizationMode: _aigNormalizationMode);
+            CheckEquityDataNormalizationMode(aigEquity, _aigNormalizationMode);
+            _priceRanges.Add(aigEquity, new Tuple<decimal, decimal>(48.73m, 49.10m));
         }
 
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
-            foreach (var chain in data.FutureChains)
+            foreach (var kvp in _priceRanges)
             {
-                _receivedData = true;
+                var equity = kvp.Key;
+                var minExpectedPrice = kvp.Value.Item1;
+                var maxExpectedPrice = kvp.Value.Item2;
 
-                foreach (var contract in chain.Value.OrderBy(x => x.Expiry))
+                if (equity.HasData && (equity.Price < minExpectedPrice || equity.Price > maxExpectedPrice))
                 {
-                    if (contract.Expiry.Date < Time.Date)
-                    {
-                        throw new Exception($"Received expired contract {contract} expired: {contract.Expiry} current time: {Time}");
-                    }
+                    throw new Exception($"{equity.Symbol}: Price {equity.Price} is  out of expected range [{minExpectedPrice}, {maxExpectedPrice}]");
                 }
             }
         }
 
-        public override void OnEndOfAlgorithm()
+        private void CheckEquityDataNormalizationMode(Equity equity, DataNormalizationMode expectedNormalizationMode)
         {
-            if (!_receivedData)
+            var subscriptions = SubscriptionManager.Subscriptions.Where(x => x.Symbol == equity.Symbol);
+            if (subscriptions.Any(x => x.DataNormalizationMode != expectedNormalizationMode))
             {
-                throw new Exception("No Futures chains were received in this regression");
+                throw new Exception($"Expected {equity.Symbol} to have data normalization mode {expectedNormalizationMode} but was {subscriptions.First().DataNormalizationMode}");
             }
         }
 
@@ -76,12 +83,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 972466;
+        public long DataPoints => 2355;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -109,8 +116,8 @@ namespace QuantConnect.Algorithm.CSharp
             {"Beta", "0"},
             {"Annual Standard Deviation", "0"},
             {"Annual Variance", "0"},
-            {"Information Ratio", "-3.102"},
-            {"Tracking Error", "0.091"},
+            {"Information Ratio", "0"},
+            {"Tracking Error", "0"},
             {"Treynor Ratio", "0"},
             {"Total Fees", "$0.00"},
             {"Estimated Strategy Capacity", "$0"},
@@ -118,8 +125,8 @@ namespace QuantConnect.Algorithm.CSharp
             {"Fitness Score", "0"},
             {"Kelly Criterion Estimate", "0"},
             {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "79228162514264337593543950335"},
-            {"Return Over Maximum Drawdown", "79228162514264337593543950335"},
+            {"Sortino Ratio", "0"},
+            {"Return Over Maximum Drawdown", "0"},
             {"Portfolio Turnover", "0"},
             {"Total Insights Generated", "0"},
             {"Total Insights Closed", "0"},
